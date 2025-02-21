@@ -1,23 +1,49 @@
-import re
+# Sample Zendesk API Response Structure
+ticket_data = {
+    "id": 12345,
+    "subject": "Website Down in US Region",
+    "description": "Critical outage reported by monitoring system",
+    "status": "urgent",
+    "priority": "high",
+    "created_at": "2023-08-20T14:35:00Z",
+    "updated_at": "2023-08-20T14:45:00Z",
+    "comments": [
+        {
+            "id": 67890,
+            "body": "[Monitoring] HTTP 500 errors detected on all endpoints",
+            "author": "system@monitoring",
+            "created_at": "2023-08-20T14:35:05Z"
+        },
+        {
+            "id": 67891,
+            "body": "Customer reports: 'Getting white screen on checkout page'",
+            "author": "customer@example.com",
+            "created_at": "2023-08-20T14:37:22Z"
+        }
+    ]
+}
 
-def extract_alert_details(ticket_text):
-    # First try regex pattern matching
-    url_pattern = r'(https?://\S+)'
-    urls = re.findall(url_pattern, ticket_text)
+def format_for_prompt(ticket):
+    """Convert Zendesk ticket to LLM-readable format"""
+    comments_str = "\n".join([
+        f"- {c['created_at']} ({c['author']}): {c['body']}"
+        for c in ticket['comments']
+    ])
     
-    # If no URL found, use AI extraction
-    if not urls:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Extract website URLs from this ticket. Respond with ONLY the URL."},
-                {"role": "user", "content": ticket_text}
-            ]
-        )
-        urls = [response.choices[0].message['content'].strip()]
+    return f"""
+    [Ticket ID]: {ticket['id']}
+    [Subject]: {ticket['subject']}
+    [Status]: {ticket['status'].title()}
+    [Priority]: {ticket['priority'].title()}
+    [Created At]: {ticket['created_at']}
+    [Last Updated]: {ticket['updated_at']}
     
-    return {
-        "website_url": urls[0],
-        "error_type": re.findall(r'\b(5\d{2}|4\d{2}|timeout|down)\b', ticket_text, re.I),
-        "reported_source": "zendesk" if "via MonitoringSystem" in ticket_text else "user"
-    }
+    [Description]:
+    {ticket['description']}
+    
+    [Comments]:
+    {comments_str}
+    """
+
+# Example usage
+prompt_input = format_for_prompt(ticket_data)
