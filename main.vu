@@ -1,1 +1,23 @@
-https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap
+ALERT_KEYWORDS = {
+    'website down', '502 error', 'outage',
+    'downtime', 'server error', 'not loading'
+}
+
+
+MONITORING_SOURCES = {
+    'datadog', 'newrelic', 'sentry',
+    'uptimerobot', 'pingdom'
+}
+
+def is_auto_generated(ticket_text):
+return any([
+    "[Auto-Generated]" in ticket_text,
+    "Monitoring Alert:" in ticket_text,
+    re.search(r'CRITICAL:.*\(PROD\)', ticket_text)
+])
+
+def alert_confidence(ticket_text):
+    score = 0
+    score += 5 * len(ALERT_KEYWORDS & set(ticket_text.lower().split()))
+    score += 10 if is_auto_generated(ticket_text) else 0
+    return min(100, score) / 100
