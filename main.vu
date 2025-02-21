@@ -1,96 +1,23 @@
-import os
-import asyncio
-from playwright.async_api import async_playwright
-import openai
-from datetime import datetime
+import re
 
-# Initialize OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-class TroubleshootingAgent:
-    def __init__(self, website_url):
-        self.website_url = website_url
-        self.status_code = None
-        self.console_logs = []
-        self.screenshot_path = None
-        self.diagnosis = None
-
-    async def check_website(self):
-        """Check website status and capture console logs"""
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            page = await browser.new_page()
-            
-            # Capture console logs
-            page.on("console", lambda msg: self.console_logs.append(msg.text))
-            
-            try:
-                response = await page.goto(self.website_url, wait_until="networkidle")
-                self.status_code = response.status if response else "No response"
-                
-                # Take screenshot
-                self.screenshot_path = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                await page.screenshot(path=self.screenshot_path)
-                
-            except Exception as e:
-                self.status_code = f"Connection failed: {str(e)}"
-                self.screenshot_path = None
-                
-            finally:
-                await browser.close()
-
-    async def analyze_with_gpt(self):
-        """Analyze results using OpenAI"""
-        prompt = f"""
-        Website Status: {self.status_code}
-        Console Logs: {self.console_logs}
-        Screenshot Available: {'Yes' if self.screenshot_path else 'No'}
-
-        Generate:
-        1. Technical diagnosis (max 3 bullet points)
-        2. Customer-friendly status message
-        3. Recommended immediate actions
-        """
-
+def extract_alert_details(ticket_text):
+    # First try regex pattern matching
+    url_pattern = r'(https?://\S+)'
+    urls = re.findall(url_pattern, ticket_text)
+    
+    # If no URL found, use AI extraction
+    if not urls:
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a senior DevOps engineer analyzing website outages."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "Extract website URLs from this ticket. Respond with ONLY the URL."},
+                {"role": "user", "content": ticket_text}
             ]
         )
-
-        self.diagnosis = response.choices[0].message['content']
-        return self.diagnosis
-
-    def generate_customer_message(self):
-        """Generate final customer message"""
-        return f"""
-        🚨 Website Status Update 🚨
-        
-        {self.diagnosis.split('Customer-friendly status message:')[-1].split('Recommended immediate actions:')[0].strip()}
-        
-        Our engineering team is actively working on resolution. Thank you for your patience.
-        """
-
-async def main(url):
-    agent = TroubleshootingAgent(url)
+        urls = [response.choices[0].message['content'].strip()]
     
-    # Step 1: Perform website checks
-    await agent.check_website()
-    
-    # Step 2: Analyze with OpenAI
-    await agent.analyze_with_gpt()
-    
-    # Step 3: Generate customer message
-    return agent.generate_customer_message()
-
-# Example usage
-if __name__ == "__main__":
-    website_url = "https://your-website.com"
-    result = asyncio.run(main(website_url))
-    print("Customer Message:")
-    print(result)
-    print("\nTechnical Details:")
-    print(f"Status Code: {agent.status_code}")
-    print(f"Console Logs: {agent.console_logs}")
+    return {
+        "website_url": urls[0],
+        "error_type": re.findall(r'\b(5\d{2}|4\d{2}|timeout|down)\b', ticket_text, re.I),
+        "reported_source": "zendesk" if "via MonitoringSystem" in ticket_text else "user"
+    }
