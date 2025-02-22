@@ -1,158 +1,29 @@
-import os
-import logging
-import openai
-from zenpy import Zenpy
-from zenpy.lib.exception import ZenpyException
-import yaml
-from datetime import datetime
+Subject: Re: UI Changes & Classification Enhancements
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+Hi [Recipient's Name],
 
-class TicketProcessor:
-    def __init__(self):
-        self.zenpy_client = self._init_zenpy()
-        self.validation_rules = {
-            'required_sections': [
-                'Alert Classification',
-                'Technical Details',
-                'Timeline',
-                'Customer Impact',
-                'Recommended Actions'
-            ],
-            'section_formats': {
-                'Technical Details': {'type': dict, 'format': 'yaml'},
-                'Timeline': {'type': list, 'format': 'iso-timestamps'},
-                'Recommended Actions': {'type': list}
-            }
-        }
-        
-    def _init_zenpy(self):
-        """Initialize Zendesk API client with env vars"""
-        return Zenpy(
-            subdomain=os.getenv('ZENDESK_SUBDOMAIN'),
-            email=os.getenv('ZENDESK_EMAIL'),
-            token=os.getenv('ZENDESK_TOKEN')
-        )
-    
-    def _format_ticket_data(self, ticket, max_comments=20):
-        """Structure ticket data for LLM processing"""
-        try:
-            comments = [
-                f"{c.created_at} [{c.author}] {c.body[:200]}"
-                for c in ticket.comments[:max_comments]
-            
-            return f"""
-            [Ticket ID]: {ticket.id}
-            [Status]: {ticket.status}
-            [Priority]: {ticket.priority}
-            [Created At]: {ticket.created_at}
-            [Updated At]: {ticket.updated_at}
-            [Subject]: {ticket.subject}
-            [Description]: {ticket.description}
-            [Comments]:\n""" + "\n".join(comments)
-        
-        except Exception as e:
-            logger.error(f"Formatting error: {str(e)}")
-            raise
-    
-    def _generate_summary_prompt(self, formatted_ticket):
-        """Create structured prompt with explicit requirements"""
-        return f"""
-        Analyze this Zendesk ticket and create a structured technical summary.
-        
-        Required sections:
-        1. Alert Classification: <type> (confidence score 0-100)
-        2. Technical Details (YAML format):
-           - affected_urls: list
-           - error_types: list
-           - first_detected: timestamp
-           - error_rate: percentage
-        3. Timeline: chronological list of ISO 8601 events
-        4. Customer Impact: 1-3 sentence description
-        5. Recommended Actions: numbered list
-        
-        Ticket Data:
-        {formatted_ticket}
-        """
-    
-    def _validate_summary(self, summary):
-        """Validate structure and content of generated summary"""
-        try:
-            # Parse sections
-            sections = {
-                part.split(':')[0].strip(): part.split(':', 1)[1].strip()
-                for part in summary.split('\n\n')
-                if ':' in part
-            }
-            
-            # Check required sections
-            missing = [s for s in self.validation_rules['required_sections'] 
-                       if s not in sections]
-            if missing:
-                raise ValueError(f"Missing sections: {missing}")
-                
-            # Validate section formats
-            if 'Technical Details' in sections:
-                yaml.safe_load(sections['Technical Details'])
-                
-            if 'Timeline' in sections:
-                for event in sections['Timeline'].split('\n'):
-                    datetime.fromisoformat(event.split(' ')[0])
-                    
-            return True
-            
-        except Exception as e:
-            logger.error(f"Validation failed: {str(e)}")
-            return False
-    
-    def process_ticket(self, ticket_id):
-        """End-to-end processing pipeline"""
-        try:
-            # Get ticket from Zendesk
-            ticket = self.zenpy_client.tickets(id=ticket_id)
-            
-            # Format for LLM
-            formatted_data = self._format_ticket_data(ticket)
-            
-            # Generate summary
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a senior technical support engineer. Generate structured ticket summaries."
-                    },
-                    {
-                        "role": "user",
-                        "content": self._generate_summary_prompt(formatted_data)
-                    }
-                ],
-                temperature=0.3  # For more deterministic output
-            )
-            
-            summary = response.choices[0].message['content']
-            
-            # Validate and return
-            if self._validate_summary(summary):
-                return summary
-            raise ValueError("Failed validation")
-            
-        except ZenpyException as e:
-            logger.error(f"Zendesk API error: {str(e)}")
-            return None
-        except Exception as e:
-            logger.error(f"Processing error: {str(e)}")
-            return None
+Thanks for the update. Here are the action items based on the discussion:
 
-# Usage Example
-if __name__ == "__main__":
-    processor = TicketProcessor()
-    summary = processor.process_ticket(12345)
-    
-    if summary:
-        print("Successfully generated summary:")
-        print(summary)
-    else:
-        print("Failed to process ticket")
+UI Changes for First Tab
+
+Improve readability and design enhancements as required.
+Ticket Classification Using Gen AI
+
+Ensure classification includes Ticket Category and Priority, not just alerts from New Relic or Wormly.
+Troubleshooting Agent in Workflow
+
+Implement an AI-driven troubleshooting agent that:
+Analyzes issues using the knowledge fabric and logs.
+Suggests next steps to support agents.
+Communication Agent for Critical Issues
+
+Trigger team chat or call if the issue is urgent or critical.
+Let me know if I missed anything or if you’d like to discuss further.
+
+Ticket Search Screen
+
+Remove dummy content; the screen should be blank before a search is performed.
+ITSM Integration
+
+Currently, the system is not connected to ITSM, which is causing a disconnect.
+Integrating ITSM will help streamline the initial flow and make the system more cohesive.
