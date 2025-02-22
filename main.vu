@@ -1,112 +1,52 @@
-import os
-from github import Github, Auth
-import openai
-from dotenv import load_dotenv
+services = [
+    {
+        "name": "AWS",
+        "url": "https://status.aws.amazon.com/data.json",
+        "parser": "parse_aws"
+    },
+    {
+        "name": "Cloudflare",
+        "url": "https://www.cloudflarestatus.com/api/v2/status.json",
+        "parser": "parse_cloudflare"
+    },
+    # Add more services (e.g., GitHub, Datadog, Slack)
+]
 
-# Load environment variables
-load_dotenv()
 
-def get_commit_history(owner, repo_name, max_commits=10):
-    """Retrieve commit history from a GitHub repository"""
+import requests
+
+def fetch_status(service):
     try:
-        g = Github(auth=Auth.Token(os.getenv('GITHUB_TOKEN')))
-        repo = g.get_repo(f"{owner}/{repo_name}")
-        commits = list(repo.get_commits()[:max_commits])
-        
-        commit_data = []
-        for commit in commits:
-            commit_info = {
-                "sha": commit.sha,
-                "author": commit.commit.author.name,
-                "date": str(commit.commit.author.date),
-                "message": commit.commit.message,
-                "changes": []
-            }
-            
-            for file in commit.files:
-                change = {
-                    "filename": file.filename,
-                    "status": file.status,
-                    "changes": file.patch or "No diff available"
-                }
-                commit_info["changes"].append(change)
-            
-            commit_data.append(commit_info)
-        return commit_data
-    
-    except Exception as e:
-        print(f"Error accessing repository: {e}")
-        return None
+        response = requests.get(service["url"], timeout=5)
+        response.raise_for_status()  # Raise HTTP errors
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
 
-def format_commit_data(commit_data):
-    """Format commit history for AI processing"""
-    formatted = []
-    for commit in commit_data:
-        entry = (
-            f"Commit: {commit['sha']}\n"
-            f"Author: {commit['author']}\n"
-            f"Date: {commit['date']}\n"
-            f"Message: {commit['message']}\n"
-            "Changes:\n"
-        )
-        
-        for change in commit['changes']:
-            entry += (
-                f"- File: {change['filename']} ({change['status']})\n"
-                f"Diff: {change['changes'][:500]}\n"  # Limit diff size
-            )
-        formatted.append(entry)
-    return "\n\n".join(formatted)
+def parse_aws(data):
+    for entry in data.get("current", []):
+        if entry.get("status", "").lower() == "red":
+            return False  # Service is down
+    return True  # All services operational
 
-def ai_solution_suggestion(problem, commit_history):
-    """Get AI-powered solution suggestion based on commit history"""
-    openai.api_key = os.getenv('OPENAI_API_KEY')
-    
-    prompt = (
-        "Analyze the following GitHub commit history and suggest a solution "
-        f"for this problem: {problem}\n\n"
-        "Commit History:\n"
-        f"{commit_history}\n\n"
-        "Consider patterns in code changes, common fixes, and "
-        "historical approaches. Provide specific suggestions with "
-        "potential implementation strategies."
-    )
-    
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a senior developer analyzing code history."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=1000
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Error generating suggestion: {e}"
+def parse_cloudflare(data):
+    return data.get("status", {}).get("indicator") == "none"
 
-def main():
-    # Get user input
-    repo_owner = input("Enter repository owner/organization: ")
-    repo_name = input("Enter repository name: ")
-    problem = input("Describe the problem you need to solve: ")
-    
-    # Retrieve commit history
-    commits = get_commit_history(repo_owner, repo_name)
-    if not commits:
-        return
-    
-    # Format for AI processing
-    formatted_history = format_commit_data(commits)
-    
-    # Get AI suggestion
-    print("\nAnalyzing commit history...")
-    suggestion = ai_solution_suggestion(problem, formatted_history)
-    
-    # Display results
-    print("\n=== AI Suggestion ===")
-    print(suggestion)
 
-if __name__ == "__main__":
-    main()
+def check_services():
+    status_report = {}
+    for service in services:
+        data = fetch_status(service)
+        if "error" in data:
+            status_report[service["name"]] = {"status": "error", "details": data["error"]}
+        else:
+            is_healthy = globals()[service["parser"]](data)
+            status_report[service["name"]] = {"status": "operational" if is_healthy else "down"}
+    return status_report
+
+
+
+AWS	https://status.aws.amazon.com/data.json
+Cloudflare	https://www.cloudflarestatus.com/api/v2/status.json
+GitHub	https://www.githubstatus.com/api/v2/status.json
+Google Cloud	https://status.cloud.google.com/incidents.json
