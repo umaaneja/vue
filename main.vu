@@ -1,63 +1,6 @@
-function formatTextContent(text) {
-  const lines = text.split('\n');
-  let html = '';
-  let currentList = [];
-
-  const flushList = () => {
-    if (currentList.length > 0) {
-      html += `<ol>${currentList.join('')}</ol>`;
-      currentList = [];
-    }
-  };
-
-  lines.forEach(line => {
-    const trimmed = line.trimEnd();
-    
-    // Handle numbered lists
-    const listMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
-    if (listMatch) {
-      currentList.push(`<li>${applyInlineFormatting(listMatch[2])}</li>`);
-      return;
-    }
-
-    // Handle regular text
-    flushList();
-    
-    if (trimmed === '') {
-      html += '<div class="paragraph-break"></div>';
-    } else {
-      html += `<p>${applyInlineFormatting(trimmed)}</p>`;
-    }
-  });
-
-  flushList();
-  return html;
+function applyInlineFormatting(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')             // Italic
+    .replace(/`(.*?)`/g, '<code class="inline-code">$1</code>'); // Inline code
 }
-
-
-function formatCodeBlocks(text) {
-  const codeSegments = text.split(/(```[\s\S]*?```)/g);
-  let processed = '';
-  let inCodeBlock = false;
-
-  codeSegments.forEach(segment => {
-    if (segment.startsWith('```')) {
-      inCodeBlock = !inCodeBlock;
-      if (inCodeBlock) {
-        const codeContent = segment
-          .replace(/^```(\w+)?\n?/, '')
-          .replace(/```$/, '')
-          .trim();
-        processed += `<pre class="code-block"><code>${codeContent}</code></pre>`;
-      }
-    } else {
-      processed += inCodeBlock ? segment : formatTextContent(segment);
-    }
-  });
-
-  return processed;
-}
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.5/purify.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/vs2015.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
