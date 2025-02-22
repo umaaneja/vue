@@ -1,29 +1,106 @@
-Subject: Re: UI Changes & Classification Enhancements
+import openai
+import re
+import json
+from datetime import datetime, timedelta
 
-Hi [Recipient's Name],
+class DebuggingAssistant:
+    def __init__(self, openai_api_key):
+        openai.api_key = openai_api_key
+        self.system_prompt = """You are an expert DevOps engineer analyzing system logs to identify 
+        root causes and recommend solutions. Analyze the provided logs and user report to:
+        1. Identify critical errors and their patterns
+        2. Correlate events across different services
+        3. Suggest immediate actions and long-term fixes
+        4. Recommend diagnostic steps
+        Structure your response with clear sections."""
+        
+    def retrieve_logs(self, service_name, start_time, end_time):
+        """Simulate log retrieval from storage/logging system"""
+        # In real implementation, connect to ELK/Splunk/S3 here
+        example_logs = f"""
+        [2023-11-05T14:23:45] INFO: AuthService - User login request
+        [2023-11-05T14:23:46] ERROR: AuthService - DB Connection timeout (3 retries failed)
+        [2023-11-05T14:23:47] WARNING: AuthService - High latency (1500ms) from IdentityProvider
+        [2023-11-05T14:23:48] ERROR: API-Gateway - 503 Service Unavailable - /login endpoint
+        """
+        return self._mask_sensitive_data(example_logs)
 
-Thanks for the update. Here are the action items based on the discussion:
+    def _mask_sensitive_data(self, logs):
+        """Basic PII/secret masking (extend with your organization's patterns)"""
+        patterns = {
+            'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+            'api_key': r'\b[a-f0-9]{32}\b',
+            'credit_card': r'\b\d{4}-\d{4}-\d{4}-\d{4}\b'
+        }
+        for name, pattern in patterns.items():
+            logs = re.sub(pattern, f'[MASKED_{name.upper()}]', logs)
+        return logs
 
-UI Changes for First Tab
+    def analyze_logs(self, user_report, logs):
+        """Use OpenAI API to analyze logs and generate recommendations"""
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": f"""
+                    User Report: {user_report}
+                    
+                    Relevant Logs:
+                    {logs}
+                    
+                    Analyze and provide:
+                    1. Identified root causes
+                    2. Immediate actions
+                    3. Diagnostic steps
+                    4. Long-term recommendations"""}
+                ],
+                temperature=0.3,
+                max_tokens=1000
+            )
+            return response.choices[0].message['content']
+        except Exception as e:
+            return f"Analysis failed: {str(e)}"
 
-Improve readability and design enhancements as required.
-Ticket Classification Using Gen AI
+    def generate_report(self, issue_description):
+        """End-to-end debugging workflow"""
+        # Step 1: Calculate time window (last 15 minutes in this example)
+        end_time = datetime.now()
+        start_time = end_time - timedelta(minutes=15)
+        
+        # Step 2: Retrieve and mask logs
+        logs = self.retrieve_logs("auth-service", start_time, end_time)
+        
+        # Step 3: Analyze with AI
+        analysis = self.analyze_logs(issue_description, logs)
+        
+        # Step 4: Format output
+        return {
+            "metadata": {
+                "issue": issue_description,
+                "log_time_window": f"{start_time.isoformat()} to {end_time.isoformat()}",
+                "services_analyzed": ["auth-service", "api-gateway"]
+            },
+            "analysis": analysis,
+            "recommended_actions": self._extract_actions(analysis)
+        }
 
-Ensure classification includes Ticket Category and Priority, not just alerts from New Relic or Wormly.
-Troubleshooting Agent in Workflow
+    def _extract_actions(self, analysis):
+        """Helper to parse AI response into structured actions"""
+        # Implement custom parsing logic based on your preferred response format
+        return {
+            "immediate": [],
+            "diagnostic": [],
+            "long_term": []
+        }
 
-Implement an AI-driven troubleshooting agent that:
-Analyzes issues using the knowledge fabric and logs.
-Suggests next steps to support agents.
-Communication Agent for Critical Issues
-
-Trigger team chat or call if the issue is urgent or critical.
-Let me know if I missed anything or if you’d like to discuss further.
-
-Ticket Search Screen
-
-Remove dummy content; the screen should be blank before a search is performed.
-ITSM Integration
-
-Currently, the system is not connected to ITSM, which is causing a disconnect.
-Integrating ITSM will help streamline the initial flow and make the system more cohesive.
+# Example Usage
+if __name__ == "__main__":
+    assistant = DebuggingAssistant(openai_api_key="your-api-key")
+    
+    issue = "Users cannot log in - receiving 503 Service Unavailable errors"
+    
+    report = assistant.generate_report(issue)
+    
+    print("=== Debugging Report ===")
+    print(json.dumps(report, indent=2))
