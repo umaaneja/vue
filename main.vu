@@ -1,52 +1,63 @@
-services = [
-    {
-        "name": "AWS",
-        "url": "https://status.aws.amazon.com/data.json",
-        "parser": "parse_aws"
-    },
-    {
-        "name": "Cloudflare",
-        "url": "https://www.cloudflarestatus.com/api/v2/status.json",
-        "parser": "parse_cloudflare"
-    },
-    # Add more services (e.g., GitHub, Datadog, Slack)
-]
+function formatTextContent(text) {
+  const lines = text.split('\n');
+  let html = '';
+  let currentList = [];
+
+  const flushList = () => {
+    if (currentList.length > 0) {
+      html += `<ol>${currentList.join('')}</ol>`;
+      currentList = [];
+    }
+  };
+
+  lines.forEach(line => {
+    const trimmed = line.trimEnd();
+    
+    // Handle numbered lists
+    const listMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+    if (listMatch) {
+      currentList.push(`<li>${applyInlineFormatting(listMatch[2])}</li>`);
+      return;
+    }
+
+    // Handle regular text
+    flushList();
+    
+    if (trimmed === '') {
+      html += '<div class="paragraph-break"></div>';
+    } else {
+      html += `<p>${applyInlineFormatting(trimmed)}</p>`;
+    }
+  });
+
+  flushList();
+  return html;
+}
 
 
-import requests
+function formatCodeBlocks(text) {
+  const codeSegments = text.split(/(```[\s\S]*?```)/g);
+  let processed = '';
+  let inCodeBlock = false;
 
-def fetch_status(service):
-    try:
-        response = requests.get(service["url"], timeout=5)
-        response.raise_for_status()  # Raise HTTP errors
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
+  codeSegments.forEach(segment => {
+    if (segment.startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+      if (inCodeBlock) {
+        const codeContent = segment
+          .replace(/^```(\w+)?\n?/, '')
+          .replace(/```$/, '')
+          .trim();
+        processed += `<pre class="code-block"><code>${codeContent}</code></pre>`;
+      }
+    } else {
+      processed += inCodeBlock ? segment : formatTextContent(segment);
+    }
+  });
 
-def parse_aws(data):
-    for entry in data.get("current", []):
-        if entry.get("status", "").lower() == "red":
-            return False  # Service is down
-    return True  # All services operational
+  return processed;
+}
 
-def parse_cloudflare(data):
-    return data.get("status", {}).get("indicator") == "none"
-
-
-def check_services():
-    status_report = {}
-    for service in services:
-        data = fetch_status(service)
-        if "error" in data:
-            status_report[service["name"]] = {"status": "error", "details": data["error"]}
-        else:
-            is_healthy = globals()[service["parser"]](data)
-            status_report[service["name"]] = {"status": "operational" if is_healthy else "down"}
-    return status_report
-
-
-
-AWS	https://status.aws.amazon.com/data.json
-Cloudflare	https://www.cloudflarestatus.com/api/v2/status.json
-GitHub	https://www.githubstatus.com/api/v2/status.json
-Google Cloud	https://status.cloud.google.com/incidents.json
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.5/purify.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/vs2015.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
