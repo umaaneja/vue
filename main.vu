@@ -1,43 +1,108 @@
 import openai
-import re
-import json
+import tiktoken  # For token counting
 from datetime import datetime, timedelta
 
 class DebuggingAssistant:
     def __init__(self, openai_api_key):
         openai.api_key = openai_api_key
-        self.system_prompt = """You are an expert DevOps engineer analyzing system logs to identify 
-        root causes and recommend solutions. Analyze the provided logs and user report to:
-        1. Identify critical errors and their patterns
-        2. Correlate events across different services
-        3. Suggest immediate actions and long-term fixes
-        4. Recommend diagnostic steps
-        Structure your response with clear sections."""
-        
-    def retrieve_logs(self, service_name, start_time, end_time):
-        """Simulate log retrieval from storage/logging system"""
-        # In real implementation, connect to ELK/Splunk/S3 here
-        example_logs = f"""
-        [2023-11-05T14:23:45] INFO: AuthService - User login request
-        [2023-11-05T14:23:46] ERROR: AuthService - DB Connection timeout (3 retries failed)
-        [2023-11-05T14:23:47] WARNING: AuthService - High latency (1500ms) from IdentityProvider
-        [2023-11-05T14:23:48] ERROR: API-Gateway - 503 Service Unavailable - /login endpoint
-        """
-        return self._mask_sensitive_data(example_logs)
+        self.encoder = tiktoken.get_encoding("cl100k_base")  # GPT-4 tokenizer
+        self.summary_prompt = """You are a senior systems engineer. Summarize these logs by:
+1. Identifying unique error types and their frequencies
+2. Noting critical warnings/events
+3. Highlighting temporal patterns
+4. Preserving important timestamps and error codes
+5. Ignoring routine informational messages
 
-    def _mask_sensitive_data(self, logs):
-        """Basic PII/secret masking (extend with your organization's patterns)"""
-        patterns = {
-            'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-            'api_key': r'\b[a-f0-9]{32}\b',
-            'credit_card': r'\b\d{4}-\d{4}-\d{4}-\d{4}\b'
-        }
-        for name, pattern in patterns.items():
-            logs = re.sub(pattern, f'[MASKED_{name.upper()}]', logs)
-        return logs
+Format:
+- Key Errors: [error1] (count), [error2] (count), ...
+- Critical Events: [event1] @ [timestamp], ...
+- Patterns: [pattern description]
+- Relevant Warnings: [warning1], ..."""
+
+    def summarize_logs(self, logs, max_summary_tokens=1000):
+        """Reduce log size while preserving key information"""
+        try:
+            # First-stage summary with cheaper model
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": self.summary_prompt},
+                    {"role": "user", "content": logs}
+                ],
+                temperature=0.1,
+                max_tokens=max_summary_tokens
+            )
+            summary = response.choices[0].message['content']
+            
+            # Enforce token limit strictly
+            token_count = len(self.encoder.encode(summary))
+            if token_count > max_summary_tokens:
+                summary = self._truncate_text(summary, max_summary_tokens)
+            
+            return summary
+        except Exception as e:
+            print(f"Summarization failed: {str(e)}")
+            return self._fallback_summary(logs, max_summary_tokens)
+
+    def _truncate_text(self, text, max_tokens):
+        """Smart truncation preserving key sections"""
+        tokens = self.encoder.encode(text)
+        if len(tokens) <= max_tokens:
+            return text
+            
+        # Prioritize keeping error-related information
+        important_keywords = ['error', 'critical', 'failed', 'exception']
+        sentences = text.split('\n')
+        
+        # Score sentences by importance
+        scored_sentences = []
+        for sentence in sentences:
+            score = sum(1 for kw in important_keywords if kw in sentence.lower())
+            scored_sentences.append((sentence, score))
+        
+        # Sort by importance and rebuild summary
+        scored_sentences.sort(key=lambda x: x[1], reverse=True)
+        truncated = []
+        token_count = 0
+        
+        for sentence, _ in scored_sentences:
+            sentence_tokens = len(self.encoder.encode(sentence))
+            if token_count + sentence_tokens <= max_tokens:
+                truncated.append(sentence)
+                token_count += sentence_tokens
+            else:
+                break
+                
+        return '\n'.join(truncated)
+
+    def _fallback_summary(self, logs, max_tokens):
+        """Rule-based fallback when AI summarization fails"""
+        # Simple error counting as backup
+        error_counts = {}
+        warnings = []
+        
+        for line in logs.split('\n'):
+            if 'ERROR' in line:
+                error_type = line.split('ERROR')[-1].split(':')[0].strip()
+                error_counts[error_type] = error_counts.get(error_type, 0) + 1
+            elif 'WARNING' in line:
+                warnings.append(line.strip())
+        
+        summary = "Key Errors:\n"
+        summary += '\n'.join([f"- {k} ({v} occurrences)" for k, v in error_counts.items()])
+        summary += "\n\nRelevant Warnings:\n" + '\n'.join(warnings[:5])
+        return self._truncate_text(summary, max_tokens)
 
     def analyze_logs(self, user_report, logs):
-        """Use OpenAI API to analyze logs and generate recommendations"""
+        """Use summarized logs for final analysis"""
+        # First summarize the logs
+        summary = self.summarize_logs(logs)
+        
+        # Calculate token savings
+        orig_tokens = len(self.encoder.encode(logs))
+        summ_tokens = len(self.encoder.encode(summary))
+        print(f"Token reduction: {orig_tokens} → {summ_tokens} ({(1 - summ_tokens/orig_tokens)*100:.1f}% reduction)")
+        
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4",
@@ -46,14 +111,10 @@ class DebuggingAssistant:
                     {"role": "user", "content": f"""
                     User Report: {user_report}
                     
-                    Relevant Logs:
-                    {logs}
+                    Log Summary:
+                    {summary}
                     
-                    Analyze and provide:
-                    1. Identified root causes
-                    2. Immediate actions
-                    3. Diagnostic steps
-                    4. Long-term recommendations"""}
+                    Full Analysis Requested:"""}
                 ],
                 temperature=0.3,
                 max_tokens=1000
@@ -63,44 +124,30 @@ class DebuggingAssistant:
             return f"Analysis failed: {str(e)}"
 
     def generate_report(self, issue_description):
-        """End-to-end debugging workflow"""
-        # Step 1: Calculate time window (last 15 minutes in this example)
+        """Updated workflow with summarization"""
         end_time = datetime.now()
         start_time = end_time - timedelta(minutes=15)
         
-        # Step 2: Retrieve and mask logs
         logs = self.retrieve_logs("auth-service", start_time, end_time)
+        masked_logs = self._mask_sensitive_data(logs)
         
-        # Step 3: Analyze with AI
-        analysis = self.analyze_logs(issue_description, logs)
+        # Use summarized logs for analysis
+        analysis = self.analyze_logs(issue_description, masked_logs)
         
-        # Step 4: Format output
         return {
             "metadata": {
                 "issue": issue_description,
                 "log_time_window": f"{start_time.isoformat()} to {end_time.isoformat()}",
-                "services_analyzed": ["auth-service", "api-gateway"]
+                "original_log_tokens": len(self.encoder.encode(masked_logs)),
+                "summary_tokens": len(self.encoder.encode(self.summarize_logs(masked_logs)))
             },
             "analysis": analysis,
             "recommended_actions": self._extract_actions(analysis)
         }
 
-    def _extract_actions(self, analysis):
-        """Helper to parse AI response into structured actions"""
-        # Implement custom parsing logic based on your preferred response format
-        return {
-            "immediate": [],
-            "diagnostic": [],
-            "long_term": []
-        }
-
 # Example Usage
 if __name__ == "__main__":
     assistant = DebuggingAssistant(openai_api_key="your-api-key")
-    
     issue = "Users cannot log in - receiving 503 Service Unavailable errors"
-    
     report = assistant.generate_report(issue)
-    
-    print("=== Debugging Report ===")
     print(json.dumps(report, indent=2))
