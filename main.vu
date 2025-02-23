@@ -1,6 +1,156 @@
-function applyInlineFormatting(text) {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')             // Italic
-    .replace(/`(.*?)`/g, '<code class="inline-code">$1</code>'); // Inline code
+# Example historical tickets
+tickets = [
+    {"text": "Payment failed for subscription", "category": "Billing", "team": "Finance"},
+    {"text": "Server downtime during peak hours", "category": "Technical", "team": "Infra"},
+    # ... more tickets
+]
+
+
+import openai
+
+def get_embedding(text):
+    response = openai.embeddings.create(
+        input=text,
+        model="text-embedding-3-small"
+    )
+    return response.data[0].embedding
+
+# Store embeddings with metadata
+embedded_tickets = []
+for ticket in tickets:
+    embedding = get_embedding(ticket["text"])
+    embedded_tickets.append({
+        "text": ticket["text"],
+        "embedding": embedding,
+        "category": ticket["category"],
+        "team": ticket["team"]
+    })
+
+
+import faiss
+import numpy as np
+
+# Convert embeddings to numpy array
+embeddings = np.array([ticket["embedding"] for ticket in embedded_tickets], dtype=np.float32)
+
+# Create FAISS index
+dim = embeddings.shape[1]
+index = faiss.IndexFlatL2(dim)
+index.add(embeddings)
+
+
+
+def find_similar_tickets(new_ticket_text, k=3):
+    # Get embedding for new ticket
+    new_embedding = get_embedding(new_ticket_text)
+    
+    # Search FAISS index
+    distances, indices = index.search(np.array([new_embedding], dtype=np.float32), k)
+    
+    # Return most similar tickets
+    return [embedded_tickets[i] for i in indices[0]]
+
+# Example usage
+new_ticket = "Credit card charge failed"
+similar_tickets = find_similar_tickets(new_ticket)
+
+
+
+
+from collections import defaultdict
+
+def predict_category_team(new_ticket_text):
+    similar_tickets = find_similar_tickets(new_ticket_text)
+    
+    category_counts = defaultdict(int)
+    team_counts = defaultdict(int)
+    
+    for ticket in similar_tickets:
+        category_counts[ticket["category"]] += 1
+        team_counts[ticket["team"]] += 1
+    
+    predicted_category = max(category_counts, key=category_counts.get)
+    predicted_team = max(team_counts, key=team_counts.get)
+    
+    return predicted_category, predicted_team
+
+
+
+
+def enhanced_classifier(ticket_text):
+    # Step 1: Get embedding-based prediction
+    emb_category, emb_team = predict_category_team(ticket_text)
+    
+    # Step 2: Get GPT-4 prediction
+    gpt_response = categorize_ticket(ticket_text)  # From previous implementation
+    
+    # Step 3: Consensus check
+    if emb_category == gpt_response["category"]:
+        final_category = emb_category
+        confidence = 0.95
+    else:
+        final_category = "Needs Human Review"
+        confidence = 0.5
+    
+    return {
+        "category": final_category,
+        "team": emb_team,
+        "confidence": confidence,
+        "similar_tickets": find_similar_tickets(ticket_text)
+    }
+
+
+if max(similarity_scores) < 0.7:
+    send_to_human()
+
+
+TEAM_MAPPING = {
+    "Billing": "Finance",
+    "Technical": "Infra",
+    # ...
 }
+
+
+
+
+import openai
+
+def categorize_ticket(ticket_text):
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {
+                "role": "system",
+                "content": f"""
+                Classify this support ticket into ONE of these categories:
+                {', '.join(categories)}.
+                Return ONLY the category name, nothing else.
+                """
+            },
+            {
+                "role": "user",
+                "content": ticket_text
+            }
+        ],
+        temperature=0  # For deterministic output
+    )
+    
+    return response.choices[0].message['content'].strip()
+
+# Example usage
+ticket = "My payment failed when I tried to upgrade my plan."
+print(categorize_ticket(ticket))  # Output: "Billing/Payments"
+
+
+
+rules = {
+  "Billing": ["payment", "invoice", "refund"],
+  "Outage": ["down", "outage", "503 error"]
+}
+
+def rule_based_classifier(text):
+  for cat, keywords in rules.items():
+      if any(kw in text.lower() for kw in keywords):
+          return cat
+  return None
+
