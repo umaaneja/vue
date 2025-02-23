@@ -1,28 +1,38 @@
-Enter our revolutionary solution – a GEN AI-driven support system that transforms how we handle alerts.
+import requests
 
-🔍 The Journey of the Alert
-The Alert Arrives:
-When Wormly sends an alert, our intelligent Alert Ingestion & Validation Agent kicks into gear.
+# Replace with your ServiceNow instance details
+instance_url = 'https://yourinstance.service-now.com'
+username = 'your_username'
+password = 'your_password'
+incident_sys_id = 'incident_sys_id'  # Sys ID of the incident
+file_path = 'path_to_your_file'  # Path to the file you want to attach
 
-It swiftly checks the alert's details, including error types and affected services.
-Using advanced observability tools like Prometheus and Datadog, it verifies whether the alert is true or false.
-True Alert Scenario:
-If the alert is confirmed as true, here’s where the magic happens:
+# Set the endpoint URL for uploading attachments
+url = f'{instance_url}/api/now/attachment/file'
 
-The GenAI Diagnostic & Analysis Agent springs into action. It gathers logs, traces, and historical incident data to analyze the root cause.
-In seconds, it prepares a concise incident summary with actionable insights for the support team.
-Simultaneously, the system auto-generates notifications via Slack or Microsoft Teams, sharing the analysis and suggested remediation steps with the engineers.
-False Alert Scenario:
-Now, if the alert is deemed false:
+# Prepare the headers
+headers = {
+    'Content-Type': 'application/octet-stream',
+    'Accept': 'application/json',
+}
 
-The system doesn’t just sit idle. Instead, it captures the website’s current state by taking screenshots and collecting console logs using tools like Puppeteer.
-It then analyzes these logs for anomalies, missing elements, or any failed network requests, providing a comprehensive diagnostic report.
-All findings are automatically logged in JIRA, helping to refine monitoring rules and reduce future false alarms.
-🎯 The Impact of Our Solution
-Speed: Alerts are validated in real-time, significantly reducing response times.
-Accuracy: By filtering out false alarms, our system minimizes unnecessary disruptions.
-Empowerment: Engineers receive crucial insights without the burden of manual checks, allowing them to focus on solving the real issues.
-🌟 The Transformation
-Thanks to this GEN AI-driven architecture, support teams no longer scramble in confusion. Instead, they’re empowered with actionable insights, reducing stress and enabling a proactive approach to incident management.
+# Prepare the file to upload
+with open(file_path, 'rb') as file:
+    # Prepare the payload
+    files = {
+        'file': (file_path, file),
+        'table_name': 'incident',  # The table to which the attachment belongs
+        'table_sys_id': incident_sys_id  # The sys_id of the incident
+    }
 
-"Now, instead of worrying about false alarms, engineers can trust the system to guide them, freeing up their time to innovate and improve our services
+    # Send the POST request to upload the attachment
+    response = requests.post(url, auth=(username, password), headers=headers, files=files)
+
+# Check the response
+if response.status_code == 201:
+    print('Attachment uploaded successfully.')
+    print('Response:', response.json())
+else:
+    print('Failed to upload attachment.')
+    print('Status Code:', response.status_code)
+    print('Response:', response.text)
