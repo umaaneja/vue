@@ -1,38 +1,86 @@
 import requests
+import os
 
-# Replace with your ServiceNow instance details
-instance_url = 'https://yourinstance.service-now.com'
-username = 'your_username'
-password = 'your_password'
-incident_sys_id = 'incident_sys_id'  # Sys ID of the incident
-file_path = 'path_to_your_file'  # Path to the file you want to attach
-
-# Set the endpoint URL for uploading attachments
-url = f'{instance_url}/api/now/attachment/file'
-
-# Prepare the headers
-headers = {
-    'Content-Type': 'application/octet-stream',
-    'Accept': 'application/json',
-}
-
-# Prepare the file to upload
-with open(file_path, 'rb') as file:
-    # Prepare the payload
-    files = {
-        'file': (file_path, file),
-        'table_name': 'incident',  # The table to which the attachment belongs
-        'table_sys_id': incident_sys_id  # The sys_id of the incident
+def attach_file_to_ticket(instance_url, username, password, table_name, ticket_sys_id, file_path):
+    """
+    Attach a file to a ServiceNow ticket
+    
+    Args:
+        instance_url (str): ServiceNow instance URL (e.g., "https://yourinstance.service-now.com")
+        username (str): ServiceNow username with API access
+        password (str): ServiceNow password
+        table_name (str): Table name (e.g., "incident" for Incident tickets)
+        ticket_sys_id (str): Sys_id of the ticket to attach to
+        file_path (str): Path to the file to upload
+        
+    Returns:
+        dict: Response from ServiceNow API
+    """
+    
+    # Construct the API endpoint URL
+    api_url = f"{instance_url}/api/now/attachment/upload"
+    
+    # Set up headers
+    headers = {
+        "Accept": "application/json"
     }
+    
+    # Set up query parameters
+    params = {
+        "table_name": table_name,
+        "table_sys_id": ticket_sys_id
+    }
+    
+    try:
+        # Open the file in binary mode
+        with open(file_path, 'rb') as file:
+            # Get the file name from the path
+            file_name = os.path.basename(file_path)
+            
+            # Create multipart form data
+            files = {
+                'file': (file_name, file)
+            }
+            
+            # Make the POST request
+            response = requests.post(
+                api_url,
+                auth=(username, password),
+                headers=headers,
+                params=params,
+                files=files,
+                verify=True  # Verify SSL certificate (set to False if using self-signed cert)
+            )
+            
+            # Check for successful response
+            if response.status_code == 201:
+                return response.json()
+            else:
+                response.raise_for_status()
+                
+    except Exception as e:
+        raise Exception(f"Failed to attach file: {str(e)}")
 
-    # Send the POST request to upload the attachment
-    response = requests.post(url, auth=(username, password), headers=headers, files=files)
-
-# Check the response
-if response.status_code == 201:
-    print('Attachment uploaded successfully.')
-    print('Response:', response.json())
-else:
-    print('Failed to upload attachment.')
-    print('Status Code:', response.status_code)
-    print('Response:', response.text)
+# Example usage
+if __name__ == "__main__":
+    # Configuration - replace with your values
+    INSTANCE_URL = "https://yourinstance.service-now.com"
+    USERNAME = "api_user"
+    PASSWORD = "your_password"
+    TABLE_NAME = "incident"  # Change to appropriate table (e.g., 'change_request')
+    TICKET_SYS_ID = "YOUR_TICKET_SYS_ID_HERE"
+    FILE_PATH = "/path/to/your/file.txt"
+    
+    try:
+        result = attach_file_to_ticket(
+            INSTANCE_URL,
+            USERNAME,
+            PASSWORD,
+            TABLE_NAME,
+            TICKET_SYS_ID,
+            FILE_PATH
+        )
+        print("Attachment successful!")
+        print(f"Attachment ID: {result['result']['sys_id']}")
+    except Exception as e:
+        print(f"Error: {str(e)}")
