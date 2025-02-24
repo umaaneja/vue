@@ -1,1 +1,1 @@
-?sysparm_query=ORDERBYopened_at&sysparm_limit=1
+?sysparm_query=state=1^ORDERBYDESCopened_at&sysparm_limit=1
