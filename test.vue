@@ -1,12 +1,7 @@
-Hi Team,
+Project Scope – Phase 1:
+In this initial phase, we will focus exclusively on developing support for React. This allows us to validate the core functionality and architecture before expanding further.
 
-After extensive discussions around requirements and system design, I’m pleased to share that we’ve officially commenced development on the project as of today.
+Future Roadmap:
+In subsequent phases, we plan to extend support to additional frameworks such as Vue.js, Next.js, and others as needed, ensuring broader compatibility and adoption.
 
-Project Overview:
-[Insert a brief 1–2 line description of the project and its objective here, if applicable.]
-
-To ensure we stay aligned throughout the development cycle, I will be scheduling weekly demo sessions. These will be held on our local environments to showcase progress, gather feedback, and make necessary adjustments early on.
-
-Once we receive access to the target environment, we will migrate our work accordingly and continue with integration and testing phases.
-
-Please feel free to reach out if you have any questions or suggestions in the meantime.
+Next Steps:
