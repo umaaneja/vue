@@ -1,89 +1,64 @@
-from html.parser import HTMLParser
-import io
+from bs4 import BeautifulSoup
 
-class TableProcessor(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.output = io.StringIO()
-        self.in_table = False
-        self.in_first_tr = False
-        self.in_td = False
-        self.current_td_content = ""
-        self.td_contents = []
-        self.process_first_tr = False
-
-    def handle_starttag(self, tag, attrs):
-        if tag == 'table':
-            self.in_table = True
-            self.process_first_tr = True
-        elif tag == 'tr' and self.in_table and self.process_first_tr:
-            self.in_first_tr = True
-            self.td_contents = []
-        elif tag == 'td' and self.in_first_tr:
-            self.in_td = True
-            self.current_td_content = ""
+def merge_empty_leading_tds(html_content):
+    """Merges empty leading TD cells into the first non-empty TD with colspan"""
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    for table in soup.find_all('table'):
+        rows = table.find_all('tr')
+        if not rows:
+            continue
             
-        # Write the tag to output
-        attrs_str = ' '.join(f'{k}="{v}"' for k, v in attrs)
-        self.output.write(f'<{tag}{" " + attrs_str if attrs_str else ""}>')
-
-    def handle_endtag(self, tag):
-        if tag == 'table':
-            self.in_table = False
-        elif tag == 'tr' and self.in_first_tr:
-            self.in_first_tr = False
-            self.process_first_tr = False
+        first_row = rows[0]
+        tds = first_row.find_all('td')
+        if not tds:
+            continue
             
-            # Process empty TDs
-            last_non_empty = -1
-            for i, content in enumerate(self.td_contents):
-                if content.strip():
-                    last_non_empty = i
+        # Find first non-empty td
+        first_non_empty = None
+        for i, td in enumerate(tds):
+            if td.get_text(strip=True):
+                first_non_empty = i
+                break
+                
+        if first_non_empty is None or first_non_empty == 0:
+            continue  # No empty tds to merge or first td already has content
             
-            if last_non_empty != -1:
-                # Go back and modify the TDs
-                pos = self.output.tell()
-                self.output.seek(0)
-                content = self.output.getvalue()
-                
-                # Find all TDs in this TR
-                td_matches = list(re.finditer(r'<td[^>]*>(.*?)</td>', content, re.DOTALL))
-                
-                for i in range(last_non_empty):
-                    if not self.td_contents[i].strip():
-                        # Calculate colspan
-                        colspan = last_non_empty - i + 1
-                        
-                        # Replace the TD
-                        match = td_matches[i]
-                        new_td = f'<td colspan="{colspan}"></td>'
-                        content = content[:match.start()] + new_td + content[match.end():]
-                
-                self.output = io.StringIO()
-                self.output.write(content)
-                self.output.seek(0, 2)  # Move to end
-                
-        elif tag == 'td' and self.in_first_tr:
-            self.in_td = False
-            self.td_contents.append(self.current_td_content)
+        # Get content and attributes from first non-empty td
+        content = tds[first_non_empty].decode_contents()
+        attrs = tds[first_non_empty].attrs
+        
+        # Create new td with colspan and original attributes
+        attrs['colspan'] = str(first_non_empty + 1)
+        new_td = soup.new_tag('td', **attrs)
+        new_td.append(BeautifulSoup(content, 'html.parser'))
+        
+        # Replace all tds up to first non-empty with our new td
+        for td in tds[:first_non_empty + 1]:
+            td.decompose()
             
-        self.output.write(f'</{tag}>')
+        first_row.insert(0, new_td)
+                
+    return str(soup)
 
-    def handle_data(self, data):
-        if self.in_td:
-            self.current_td_content += data
-        self.output.write(data)
-
-def fix_table_colspans(html_content):
-    parser = TableProcessor()
-    parser.feed(html_content)
-    return parser.output.getvalue()
+def process_html_file(input_file, output_file):
+    """Reads HTML from input file, processes it, and writes to output file"""
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            html = f.read()
+        
+        processed_html = merge_empty_leading_tds(html)
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(processed_html)
+        
+        print(f"Successfully processed HTML. Output saved to {output_file}")
+    except Exception as e:
+        print(f"Error processing file: {e}")
 
 # Example usage
-with open('input.html', 'r', encoding='utf-8') as f:
-    html = f.read()
-
-processed_html = fix_table_colspans(html)
-
-with open('output.html', 'w', encoding='utf-8') as f:
-    f.write(processed_html)
+if __name__ == "__main__":
+    input_filename = "input.html"  # Change to your input file
+    output_filename = "output.html"  # Change to your output file
+    
+    process_html_file(input_filename, output_filename)
