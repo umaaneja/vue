@@ -1,7 +1,6 @@
 from bs4 import BeautifulSoup
 
 def merge_empty_leading_tds(html_content):
-    """Merges empty leading TD cells into the first non-empty TD with colspan"""
     soup = BeautifulSoup(html_content, 'html.parser')
     
     for table in soup.find_all('table'):
@@ -24,13 +23,11 @@ def merge_empty_leading_tds(html_content):
         if first_non_empty is None or first_non_empty == 0:
             continue  # No empty tds to merge or first td already has content
             
-        # Get content and attributes from first non-empty td
+        # Get content from first non-empty td
         content = tds[first_non_empty].decode_contents()
-        attrs = tds[first_non_empty].attrs
         
-        # Create new td with colspan and original attributes
-        attrs['colspan'] = str(first_non_empty + 1)
-        new_td = soup.new_tag('td', **attrs)
+        # Create new td with colspan
+        new_td = soup.new_tag('td', colspan=str(first_non_empty + 1))
         new_td.append(BeautifulSoup(content, 'html.parser'))
         
         # Replace all tds up to first non-empty with our new td
@@ -41,24 +38,16 @@ def merge_empty_leading_tds(html_content):
                 
     return str(soup)
 
-def process_html_file(input_file, output_file):
-    """Reads HTML from input file, processes it, and writes to output file"""
-    try:
-        with open(input_file, 'r', encoding='utf-8') as f:
-            html = f.read()
-        
-        processed_html = merge_empty_leading_tds(html)
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(processed_html)
-        
-        print(f"Successfully processed HTML. Output saved to {output_file}")
-    except Exception as e:
-        print(f"Error processing file: {e}")
-
 # Example usage
-if __name__ == "__main__":
-    input_filename = "input.html"  # Change to your input file
-    output_filename = "output.html"  # Change to your output file
-    
-    process_html_file(input_filename, output_filename)
+html = """
+<table>
+  <tr>
+    <td></td>
+    <td></td>
+    <td>Actual Content</td>
+  </tr>
+</table>
+"""
+
+processed_html = merge_empty_leading_tds(html)
+print(processed_html)
