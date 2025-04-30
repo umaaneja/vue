@@ -1,6 +1,6 @@
 from bs4 import BeautifulSoup
 
-def merge_empty_leading_tds(html_content):
+def merge_empty_tds(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     
     for table in soup.find_all('table'):
@@ -8,38 +8,57 @@ def merge_empty_leading_tds(html_content):
         if not rows:
             continue
             
-        first_row = rows[0]
-        tds = first_row.find_all('td')
-        if not tds:
-            continue
-            
-        # Find first non-empty td
-        first_non_empty = None
-        for i, td in enumerate(tds):
-            if td.get_text(strip=True):
-                first_non_empty = i
-                break
+        for row in rows:
+            tds = row.find_all('td')
+            if not tds:
+                continue
                 
-        if first_non_empty is None or first_non_empty == 0:
-            continue  # No empty tds to merge or first td already has content
+            # Find first and last non-empty tds
+            first_non_empty = None
+            last_non_empty = None
+            for i, td in enumerate(tds):
+                if td.get_text(strip=True):
+                    if first_non_empty is None:
+                        first_non_empty = i
+                    last_non_empty = i
             
-        # Get content from first non-empty td
-        content = tds[first_non_empty].decode_contents()
-        
-        # Create new td with colspan
-        new_td = soup.new_tag('td', colspan=str(first_non_empty + 1))
-        new_td.append(BeautifulSoup(content, 'html.parser'))
-        
-        # Replace all tds up to first non-empty with our new td
-        for td in tds[:first_non_empty + 1]:
-            td.decompose()
+            if first_non_empty is None:
+                continue  # All cells are empty
+                
+            # Process empty cells before first non-empty
+            if first_non_empty > 0:
+                content = tds[first_non_empty].decode_contents()
+                attrs = tds[first_non_empty].attrs
+                attrs['colspan'] = str(first_non_empty + 1)
+                new_td = soup.new_tag('td', **attrs)
+                new_td.append(BeautifulSoup(content, 'html.parser'))
+                
+                for td in tds[:first_non_empty + 1]:
+                    td.decompose()
+                    
+                row.insert(0, new_td)
+                tds = row.find_all('td')  # Refresh after modification
             
-        first_row.insert(0, new_td)
+            # Process empty cells after last non-empty
+            if last_non_empty < len(tds) - 1:
+                content = tds[last_non_empty].decode_contents()
+                attrs = tds[last_non_empty].attrs
+                span = len(tds) - last_non_empty
+                if 'colspan' in attrs:
+                    span += int(attrs['colspan']) - 1
+                attrs['colspan'] = str(span)
+                new_td = soup.new_tag('td', **attrs)
+                new_td.append(BeautifulSoup(content, 'html.parser'))
+                
+                for td in tds[last_non_empty:]:
+                    td.decompose()
+                    
+                row.append(new_td)
                 
     return str(soup)
 
-# Example usage
-html = """
+# Test cases
+html1 = """
 <table>
   <tr>
     <td></td>
@@ -49,5 +68,17 @@ html = """
 </table>
 """
 
-processed_html = merge_empty_leading_tds(html)
-print(processed_html)
+html2 = """
+<table>
+  <tr>
+    <td>Actual Content</td>
+    <td></td>
+    <td></td>
+  </tr>
+</table>
+"""
+
+print("Test Case 1:")
+print(merge_empty_tds(html1))
+print("\nTest Case 2:")
+print(merge_empty_tds(html2))
